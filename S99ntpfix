@@ -1,0 +1,68 @@
+#!/bin/sh
+# XG-040G-MD proven layout: br0 -> OpenWrt NTP server.
+# XG-040G-MF: verify vendor init and ntp.sh compatibility first.
+SERVER_IP='192.168.1.2'
+INTERFACE='br0'
+INTERVAL=86400
+TZ_OFFSET='+08:00'
+CHECK_SECONDS=10
+BOOT_DELAY=20
+PIDFILE='/tmp/ntpfix.pid'
+LOG='/tmp/ntpfix.log'
+log() { echo "$(date '+%Y-%m-%d %H:%M:%S') $*" >> "$LOG"; }
+is_monitor_running() {
+    [ -r "$PIDFILE" ] || return 1
+    p="$(cat "$PIDFILE" 2>/dev/null)"
+    [ -n "$p" ] || return 1
+    kill -0 "$p" 2>/dev/null || return 1
+    ps | grep "^[ ]*$p " | grep -q '[S]99ntpfix'
+}
+monitor() {
+    echo "$$" > "$PIDFILE"
+    log "Monitor started PID=$$"
+    sleep "$BOOT_DELAY"
+    while [ "$(cat "$PIDFILE" 2>/dev/null)" = "$$" ]; do
+        if ping -c 1 -W 2 -I "$INTERFACE" "$SERVER_IP" >/dev/null 2>&1; then
+            pids="$(pidof ntpclient 2>/dev/null)"
+            count=0
+            restart=0
+            for p in $pids; do
+                count=$((count + 1))
+                cmd="$(ps | grep "^[ ]*$p " | grep '[n]tpclient')"
+                case "$cmd" in
+                    *" -e $INTERFACE "*" -T 0 "*" -i $INTERVAL "*" -h $SERVER_IP,"*) ;;
+                    *) restart=1 ;;
+                esac
+            done
+            [ "$count" -eq 1 ] || restart=1
+            if [ "$restart" -eq 1 ]; then
+                log "Restarting NTP on $INTERFACE"
+                killall ntpclient 2>/dev/null
+                sleep 2
+                /sbin/ntp.sh "$SERVER_IP," "$TZ_OFFSET" "$INTERFACE" 0 "$INTERVAL"
+            fi
+        fi
+        sleep "$CHECK_SECONDS"
+    done
+    log "Monitor exited"
+}
+case "$1" in
+    start)
+        if is_monitor_running; then echo "Monitor already running"; exit 0; fi
+        rm -f "$PIDFILE"
+        ( monitor ) >/dev/null 2>&1 &
+        ;;
+    stop)
+        if [ -f "$PIDFILE" ]; then
+            p="$(cat "$PIDFILE" 2>/dev/null)"
+            rm -f "$PIDFILE"
+            [ -n "$p" ] && kill "$p" 2>/dev/null
+        fi
+        ;;
+    status)
+        if is_monitor_running; then echo "Monitor running: $(cat "$PIDFILE")"; else echo "Monitor not running"; fi
+        ps | grep '[n]tpclient'
+        ;;
+    *) echo "Usage: $0 {start|stop|status}"; exit 1 ;;
+esac
+exit 0
