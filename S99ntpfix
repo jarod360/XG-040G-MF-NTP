@@ -16,7 +16,7 @@ monitor_alive() {
     p="$(cat "$PIDFILE" 2>/dev/null)"
     [ -n "$p" ] || return 1
     kill -0 "$p" 2>/dev/null || return 1
-    ps | grep "^[ ]*$p " | grep -q '[S]99ntpfix'
+    ps w | grep "^[ ]*$p " | grep -q '[S]99ntpfix'
 }
 
 monitor() {
@@ -31,9 +31,9 @@ monitor() {
             restart=0
             for p in $pids; do
                 count=$((count + 1))
-                cmd="$(ps | grep "^[ ]*$p " | grep '[n]tpclient')"
+                cmd="$(ps w | grep "^[ ]*$p " | grep '[n]tpclient')"
                 case "$cmd" in
-                    *" -e $INTERFACE "*" -T 0 "*" -i $INTERVAL "*" -h $SERVER_IP,"*) ;;
+                    *" -e $INTERFACE "*"-T 0 "*"-i $INTERVAL "*"-h $SERVER_IP,"*) ;;
                     *) restart=1 ;;
                 esac
             done
@@ -80,7 +80,7 @@ case "$1" in
         else
             echo "Monitor not running"
         fi
-        ps | grep '[n]tpclient'
+        ps w | grep '[n]tpclient'
         ;;
     *)
         echo "Usage: $0 {start|stop|status}"
